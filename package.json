@@ -1,0 +1,36 @@
+{
+  "name": "poke-cli",
+  "version": "1.0.0",
+  "description": "CLI for Pokémon save files",
+  "keywords": [
+    "poke",
+    "cli",
+    "savefile"
+  ],
+  "license": "ISC",
+  "author": "Breno Gomes",
+  "type": "module",
+  "module": "src/index.ts",
+  "bin": {
+    "poke-cli": "src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "bun": ">=1.0"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "commander": "^14.0.3",
+    "zod": "^4.4.3"
+  }
+}

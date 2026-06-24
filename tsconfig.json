@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    /* Language and environment */
+    "target": "ESNext",
+    "lib": ["ESNext"],
+
+    /* Modules — Bun runs TypeScript directly */
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "rootDir": "src",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    /* No emit — Bun executes the source */
+    "noEmit": true,
+
+    /* Interop */
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowJs": true,
+
+    /* Type checking — strict */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": true,
+
+    /* Bun runtime types */
+    "types": ["bun"],
+
+    /* Completeness */
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
+}
