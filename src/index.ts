@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { loadReadPartyCommand } from "./commands/read-party";
 import { loadReadBoxCommand } from "./commands/read-box";
 import { loadGetEmptyBoxSlot } from "./commands/get-empty-box-slot";
+import { loadCloneCommand } from "./commands/clone-pokemon";
 
 const program = new Command();
 program
@@ -13,4 +14,5 @@ program
 loadReadPartyCommand(program);
 loadReadBoxCommand(program);
 loadGetEmptyBoxSlot(program);
+loadCloneCommand(program);
 program.parse(process.argv);

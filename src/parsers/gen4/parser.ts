@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 import { BaseParser } from "../base";
 import type { PartyPokemon, Pokemon } from "../../pokemon/types";
@@ -13,7 +13,7 @@ import {
   SLOT_BASES,
   SLOT_SIZE,
 } from "./constants";
-import { decodeBoxSlot, decodePartySlot } from "./utils";
+import { crc16Ccitt, decodeBoxSlot, decodePartySlot, encodeBoxSlot } from "./utils";
 
 export class Gen4Parser extends BaseParser {
   private readonly forcedGame: Gen4Game["name"] | undefined;
@@ -79,6 +79,31 @@ export class Gen4Parser extends BaseParser {
     }
 
     throw new Error("Storage is full: no empty box slot available");
+  }
+
+  /** Write `pokemon` into `[boxID, slot]` and save the result to `outFile`. */
+  writePokemonToBoxSlot(pokemon: Pokemon, boxSlot: [number, number], outFile: string): void {
+    if (pokemon.generation !== 4) {
+      throw new Error(`Gen4Parser cannot write a generation ${pokemon.generation} Pokémon`);
+    }
+    const [boxID, slot] = boxSlot;
+    if (!Number.isInteger(boxID) || boxID < 0 || boxID >= BOX_COUNT) {
+      throw new Error(`Box ${boxID} is out of range (0-${BOX_COUNT - 1})`);
+    }
+    if (!Number.isInteger(slot) || slot < 0 || slot >= BOX_CAPACITY) {
+      throw new Error(`Slot ${slot} is out of range (0-${BOX_CAPACITY - 1})`);
+    }
+
+    const save = readFileSync(this.saveFilePath);
+    const game = this.resolveGame(save);
+    const storageBase = this.resolveStoragePartition(save, game) + game.storageBase;
+    const slotOffset = storageBase + game.boxOffset + boxID * game.boxStride + slot * BOX_SLOT_SIZE;
+
+    encodeBoxSlot(pokemon).copy(save, slotOffset);
+    const checksum = crc16Ccitt(save, storageBase, game.storageSize - game.storageFooterSize);
+    save.writeUInt16LE(checksum, storageBase + game.storageSize - 2);
+
+    writeFileSync(outFile, save);
   }
 
   /** Pick the game variant: explicit override, then footer size, then DP. */

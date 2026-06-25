@@ -12,6 +12,7 @@ export abstract class BaseParser{
     abstract readParty(): PartyPokemon[];
     abstract readBox(boxID: number): Pokemon[];
     abstract getEmptyBoxSlot(): [number, number];
+    abstract writePokemonToBoxSlot(pokemon: Pokemon, boxSlot: [number, number], outFile: string): void;
 
     async printPokemon(pokemon: Pokemon){
         const species = await fetchPokemonDataByID(pokemon.speciesId)

@@ -24,8 +24,11 @@ function lcrngNext(seed: number): number {
   return (Math.imul(seed, 0x41c64e6d) + 0x6073) >>> 0;
 }
 
-/** Decrypt `length` bytes (u16 keystream) at `start` into a fresh buffer. */
-function decryptBlock(src: Buffer, start: number, length: number, seed: number): Buffer {
+/**
+ * Apply the u16 XOR keystream over `length` bytes at `start` into a fresh
+ * buffer. The transform is symmetric, so it both encrypts and decrypts.
+ */
+function xorCryptBlock(src: Buffer, start: number, length: number, seed: number): Buffer {
   const out = Buffer.from(src.subarray(start, start + length));
   let state = seed >>> 0;
   for (let i = 0; i < length; i += 2) {
@@ -44,7 +47,7 @@ function unshuffleBox(slot: Buffer): { box: Buffer; pid: number } | undefined {
   const pid = slot.readUInt32LE(0x00);
   const checksum = slot.readUInt16LE(0x06);
 
-  const encrypted = decryptBlock(slot, ENCRYPTED_BLOCK_OFFSET, ENCRYPTED_BLOCK_SIZE, checksum);
+  const encrypted = xorCryptBlock(slot, ENCRYPTED_BLOCK_OFFSET, ENCRYPTED_BLOCK_SIZE, checksum);
   const order = BLOCK_ORDERS[((pid >>> 13) & 0x1f) % 24];
   if (!order) return undefined;
 
@@ -70,7 +73,7 @@ export function decodePartySlot(slot: Buffer): PartyPokemon | undefined {
   const base = decodeBoxPokemon(parts.box, parts.pid);
   if (!base) return undefined;
 
-  const battle = decryptBlock(slot, BATTLE_BLOCK_OFFSET, BATTLE_BLOCK_SIZE, parts.pid);
+  const battle = xorCryptBlock(slot, BATTLE_BLOCK_OFFSET, BATTLE_BLOCK_SIZE, parts.pid);
   return {
     ...base,
     status: decodeStatus(battle.readUInt8(0x00)),
@@ -281,4 +284,146 @@ function buildGen4Charmap(): Record<number, string> {
   for (let i = 0; i < 26; i++) map[0x0145 + i] = String.fromCharCode(0x61 + i); // a-z
   map[0x01be] = "-"; // inferred from observed names (e.g. "Shin-Chan")
   return map;
+}
+
+const GEN4_CHARMAP_INVERSE: Record<string, number> = Object.fromEntries(
+  Object.entries(GEN4_CHARMAP).map(([code, char]) => [char, Number(code)]),
+);
+
+/**
+ * Encrypt and shuffle a Gen 4 Pokémon into the 0x88-byte stored box slot — the
+ * inverse of {@link decodeBoxSlot}. Fields absent from {@link PokemonGen4}
+ * (alternate ribbon sets, dates, party battle stats) are written as zero.
+ */
+export function encodeBoxSlot(pokemon: PokemonGen4): Buffer {
+  const pid = pokemon.personalityValue >>> 0;
+  const box = Buffer.alloc(0x88);
+  box.writeUInt32LE(pid, 0x00);
+  box.writeUInt16LE(pokemon.speciesId, 0x08);
+  box.writeUInt16LE(pokemon.heldItemId ?? 0, 0x0a);
+  box.writeUInt16LE(pokemon.ot.trainerId, 0x0c);
+  box.writeUInt16LE(pokemon.ot.secretId, 0x0e);
+  box.writeUInt32LE(pokemon.experience >>> 0, 0x10);
+  box.writeUInt8(pokemon.friendship ?? 0, 0x14);
+  box.writeUInt8(pokemon.abilityId, 0x15);
+  box.writeUInt8(encodeMarkings(pokemon.markings), 0x16);
+  box.writeUInt8(pokemon.languageId, 0x17);
+  writeSixStats(box, 0x18, pokemon.evs);
+  writeContest(box, 0x1e, pokemon.contest);
+  box.writeUInt32LE(pokemon.ribbons >>> 0, 0x24);
+  writeMoves(box, pokemon.moves);
+  box.writeUInt32LE(packIvs(pokemon.ivs, pokemon.isEgg, pokemon.isNicknamed), 0x38);
+  box.writeUInt8(encodeGenderForm(pokemon.gender, pokemon.formId), 0x40);
+  box.writeUInt8(pokemon.abilitySlot === 2 ? 1 : 0, 0x42);
+  encodeGen4Text(box, 0x48, 11, pokemon.nickname);
+  box.writeUInt8(pokemon.met.originGameId, 0x5f);
+  encodeGen4Text(box, 0x68, 8, pokemon.ot.name);
+  box.writeUInt16LE(pokemon.eggMet?.locationId ?? 0, 0x7e);
+  box.writeUInt16LE(pokemon.met.locationId, 0x80);
+  box.writeUInt8(pokemon.pokerus ?? 0, 0x82);
+  box.writeUInt8(pokemon.met.ballId, 0x83);
+  box.writeUInt8((pokemon.met.levelMet & 0x7f) | (pokemon.ot.gender === "female" ? 0x80 : 0), 0x84);
+
+  let checksum = 0;
+  for (let i = ENCRYPTED_BLOCK_OFFSET; i < 0x88; i += 2) {
+    checksum = (checksum + box.readUInt16LE(i)) & 0xffff;
+  }
+  box.writeUInt16LE(checksum, 0x06);
+
+  const order = BLOCK_ORDERS[((pid >>> 13) & 0x1f) % 24];
+  if (!order) throw new Error("Invalid Gen 4 block order");
+
+  const stored = Buffer.alloc(0x88);
+  box.copy(stored, 0x00, 0x00, ENCRYPTED_BLOCK_OFFSET);
+  order.forEach((logical, pos) => {
+    const from = ENCRYPTED_BLOCK_OFFSET + logical * 0x20;
+    box.copy(stored, ENCRYPTED_BLOCK_OFFSET + pos * 0x20, from, from + 0x20);
+  });
+
+  xorCryptBlock(stored, ENCRYPTED_BLOCK_OFFSET, ENCRYPTED_BLOCK_SIZE, checksum).copy(
+    stored,
+    ENCRYPTED_BLOCK_OFFSET,
+  );
+  return stored;
+}
+
+/** CRC-16/CCITT (poly 0x1021, init 0xFFFF) used by the Gen 4 block footers. */
+export function crc16Ccitt(buf: Buffer, start: number, length: number): number {
+  let crc = 0xffff;
+  for (let i = start; i < start + length; i++) {
+    crc = (crc ^ (buf.readUInt8(i) << 8)) & 0xffff;
+    for (let bit = 0; bit < 8; bit++) {
+      crc = (crc & 0x8000 ? (crc << 1) ^ 0x1021 : crc << 1) & 0xffff;
+    }
+  }
+  return crc;
+}
+
+function writeSixStats(buf: Buffer, offset: number, stats: EffortValues): void {
+  buf.writeUInt8(stats.hp, offset);
+  buf.writeUInt8(stats.attack, offset + 1);
+  buf.writeUInt8(stats.defense, offset + 2);
+  buf.writeUInt8(stats.speed, offset + 3);
+  buf.writeUInt8(stats.specialAttack, offset + 4);
+  buf.writeUInt8(stats.specialDefense, offset + 5);
+}
+
+function writeContest(buf: Buffer, offset: number, contest: ContestStats): void {
+  buf.writeUInt8(contest.coolness, offset);
+  buf.writeUInt8(contest.beauty, offset + 1);
+  buf.writeUInt8(contest.cuteness, offset + 2);
+  buf.writeUInt8(contest.smartness, offset + 3);
+  buf.writeUInt8(contest.toughness, offset + 4);
+  buf.writeUInt8(contest.feel, offset + 5);
+}
+
+function writeMoves(buf: Buffer, moves: readonly MoveSlot[]): void {
+  let ppUps = 0;
+  for (let i = 0; i < 4; i++) {
+    const move = moves[i];
+    buf.writeUInt16LE(move?.moveId ?? 0, 0x28 + i * 2);
+    buf.writeUInt8(move?.pp ?? 0, 0x30 + i);
+    ppUps |= ((move?.ppUps ?? 0) & 0x03) << (i * 2);
+  }
+  buf.writeUInt8(ppUps, 0x34);
+}
+
+function packIvs(ivs: IndividualValues, isEgg: boolean, isNicknamed: boolean): number {
+  let word =
+    (ivs.hp & 0x1f) |
+    ((ivs.attack & 0x1f) << 5) |
+    ((ivs.defense & 0x1f) << 10) |
+    ((ivs.speed & 0x1f) << 15) |
+    ((ivs.specialAttack & 0x1f) << 20) |
+    ((ivs.specialDefense & 0x1f) << 25);
+  if (isEgg) word |= 0x4000_0000;
+  if (isNicknamed) word |= 0x8000_0000;
+  return word >>> 0;
+}
+
+function encodeMarkings(markings: Markings): number {
+  return (
+    (markings.circle ? 0x01 : 0) |
+    (markings.triangle ? 0x02 : 0) |
+    (markings.square ? 0x04 : 0) |
+    (markings.heart ? 0x08 : 0) |
+    (markings.star ? 0x10 : 0) |
+    (markings.diamond ? 0x20 : 0)
+  );
+}
+
+function encodeGenderForm(gender: Gender, formId: number): number {
+  const genderBits = gender === "genderless" ? 0x04 : gender === "female" ? 0x02 : 0x00;
+  return (genderBits | (formId << 3)) & 0xff;
+}
+
+/** Encode a string into the Gen 4 name field, terminating at the first unmappable character. */
+function encodeGen4Text(buf: Buffer, offset: number, maxChars: number, text: string): void {
+  let i = 0;
+  for (; i < maxChars && i < text.length; i++) {
+    const code = GEN4_CHARMAP_INVERSE[text[i] ?? ""];
+    if (code === undefined) break;
+    buf.writeUInt16LE(code, offset + i * 2);
+  }
+  for (; i < maxChars; i++) buf.writeUInt16LE(0xffff, offset + i * 2);
 }

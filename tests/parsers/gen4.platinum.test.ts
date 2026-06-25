@@ -1,3 +1,6 @@
+import { rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { Gen4Parser } from "../../src/parsers/gen4/parser";
 const parser = new Gen4Parser("./saves/platinum.sav");
@@ -311,4 +314,27 @@ test("It correctly gets the last pokemon in the last box", () =>{
         languageId: 4,
         formId: 27,
     })
+})
+
+test("It correctly writes pokemon to the nearest empty box", () =>{
+    const pokemon = parser.readParty()[0];
+    expect(pokemon).toBeDefined();
+    if (!pokemon) return;
+
+    const [boxID, slot] = parser.getEmptyBoxSlot();
+    const outFile = join(tmpdir(), "poke-cli.platinum.write.sav");
+    parser.writePokemonToBoxSlot(pokemon, [boxID, slot], outFile);
+
+    const written = new Gen4Parser(outFile).readBox(boxID)[slot];
+
+    // A boxed Pokémon drops the party-only fields, so re-attach them to compare.
+    // The OT name truncates at the unmapped Gen 4 symbol in "Mattia?", which the
+    // partial charmap cannot re-encode.
+    const { status, level, currentHp, stats } = pokemon;
+    expect({ ...written, status, level, currentHp, stats }).toEqual({
+        ...pokemon,
+        ot: { ...pokemon.ot, name: "Mattia" },
+    })
+
+    rmSync(outFile, { force: true });
 })

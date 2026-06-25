@@ -12,12 +12,11 @@ const BOX_COUNT = 18;
 const BOX_CAPACITY = 30;
 const BOX_SLOT_SIZE = 0x88; // boxed Pokémon omit the 0x64 battle block
 
-// Pt and HGSS are verified against real saves; DP follows the same layout but
-// is not yet verified here.
+// All three are verified against real saves.
 const GEN4_GAMES: readonly Gen4Game[] = [
-  { name: "DP", generalSize: 0xc100, partyOffset: 0x98, storageBase: 0xc100, storageSize: 0x121e4, boxOffset: 0x04, boxStride: 0xff0 },
-  { name: "Pt", generalSize: 0xcf2c, partyOffset: 0xa0, storageBase: 0xcf2c, storageSize: 0x121e4, boxOffset: 0x04, boxStride: 0xff0 },
-  { name: "HGSS", generalSize: 0xf628, partyOffset: 0x98, storageBase: 0xf700, storageSize: 0x12310, boxOffset: 0x00, boxStride: 0x1000 },
+  { name: "DP", generalSize: 0xc100, partyOffset: 0x98, storageBase: 0xc100, storageSize: 0x121e0, storageFooterSize: 0x14, boxOffset: 0x04, boxStride: 0xff0 },
+  { name: "Pt", generalSize: 0xcf2c, partyOffset: 0xa0, storageBase: 0xcf2c, storageSize: 0x121e4, storageFooterSize: 0x14, boxOffset: 0x04, boxStride: 0xff0 },
+  { name: "HGSS", generalSize: 0xf628, partyOffset: 0x98, storageBase: 0xf700, storageSize: 0x12310, storageFooterSize: 0x10, boxOffset: 0x00, boxStride: 0x1000 },
 ];
 
 /** The 512 KiB save holds two interchangeable slots; the live one wins. */
