@@ -7,7 +7,6 @@
     /* Modules — Bun runs TypeScript directly */
     "module": "Preserve",
     "moduleResolution": "bundler",
-    "rootDir": "src",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "verbatimModuleSyntax": true,
@@ -36,6 +35,6 @@
     /* Completeness */
     "skipLibCheck": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "tests/**/*"],
   "exclude": ["node_modules"]
 }

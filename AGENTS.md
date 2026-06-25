@@ -44,3 +44,14 @@ Write close to zero comments. Code, names, and types should explain themselves.
 - No default exports for modules with multiple concerns.
 - No barrel files that obscure dependency graphs.
 - No premature abstraction. Duplicate twice before extracting.
+
+## Files
+
+- All math related files go into `src/utils/math.ts`.
+
+## Parser structure
+This part of the documentation defines how files must be organized inside `/src/parsers/`.
+- `constants.ts` must keep all the constants.
+- `parsers.ts` the main parser class that inherits `Base Parser`.
+- `types.ts` all types and interfaces.
+- `utils.ts` all the utils functions so that `parsers.ts` can work.
