@@ -2,9 +2,9 @@ import { Command } from "commander";
 import { evolvePokemon } from "../actions/evolve-pokemon";
 import { clonePokemon } from "../actions/clone-pokemon";
 
-export function loadPokemonCommands(program: Command) {
+export function loadMutationCommands(program: Command) {
   program
-    .command("clonePokemon")
+    .command("clone")
     .description(
       "Clones a Pokémon from a save file to another in the closest available box position",
     )
@@ -16,12 +16,10 @@ export function loadPokemonCommands(program: Command) {
       "-b --box <VALUE>",
       "Gets Pokémon from box in format [box, position]",
     )
-    .action(async (fromPath, toPath, options) => {
-      clonePokemon(fromPath, toPath, options);
-    });
+    .action(clonePokemon);
 
   program
-    .command("evolvePokemon")
+    .command("evolve")
     .description("Evolves a Pokémon from a save file")
     .argument("<from-path>", "Path to the origin savefile")
     .option("-o --out <VALUE>", "Output destination save file")
@@ -34,7 +32,5 @@ export function loadPokemonCommands(program: Command) {
       "-b --box <VALUE>",
       "Gets Pokémon from box in format [box, position]",
     )
-    .action(async (fromPath, options) => {
-      evolvePokemon(fromPath, options);
-    });
+    .action(evolvePokemon);
 }

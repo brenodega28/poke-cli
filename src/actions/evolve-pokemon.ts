@@ -1,18 +1,18 @@
 import type { EvolvePokemonArgs } from "../parsers/base";
 import { getParser } from "../parsers/decider";
 
-export function evolvePokemon(
+export async function evolvePokemon(
   fromPath: string,
   options: Record<string, string>,
 ) {
   const parser = getParser(fromPath);
-  const outFile = options.outFile ?? fromPath;
+  const outFile = options.out ?? fromPath;
 
   if (!options.party && !options.box)
     throw Error("Must provide party or box location using -p or -b");
 
   if (options.party)
-    parser.evolvePokemon({
+    await parser.evolvePokemon({
         partySlot: parseInt(options.party),
         outFile: outFile
     });
@@ -27,6 +27,6 @@ export function evolvePokemon(
         args.speciesID = parseInt(options.specieid)
     }
 
-    parser.evolvePokemon(args);
+    await parser.evolvePokemon(args);
   }
 }
