@@ -51,7 +51,8 @@ poke-cli <command> --help
 
 
 ### Support
-- [ ] GEN 1
-- [ ] GEN 2
-- [ ] GEN 3
-- [x] GEN 4
+- [ ] GEN 1 (RB)
+- [ ] GEN 2 (GSC)
+- [ ] GEN 3 (FRLG / RSE)
+- [x] GEN 4 (HGSS / DPP)
+- [ ] GEN 5 (BW / BW2)
