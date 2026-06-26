@@ -1,7 +1,8 @@
+import { readFileSync } from "node:fs";
 import { getParser } from "../parsers/decider";
 
 export async function getParty(path: string, options: Record<string, string>) {
-  const parser = getParser(path);
+  const parser = getParser(readFileSync(path));
   const party = parser.readParty();
 
   if (options.index) {

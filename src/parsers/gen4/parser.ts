@@ -1,5 +1,3 @@
-import { readFileSync, writeFileSync } from "node:fs";
-
 import { BaseParser, type EvolvePokemonArgs, type WritePokemonToBoxSlotArgs } from "../base";
 import { fetchPokemonDataByID } from "../../pokemon/data";
 import type { PartyPokemon, Pokemon, PokemonGen4 } from "../../pokemon/types";
@@ -16,24 +14,34 @@ import {
   SLOT_SIZE,
 } from "./constants";
 import { crc16Ccitt, decodeBoxSlot, decodePartySlot, encodeBoxSlot, encodePartySlot } from "./utils";
+import { copyInto, readU32, writeU16 } from "./bytes";
 
 export class Gen4Parser extends BaseParser {
   private readonly forcedGame: Gen4Game["name"] | undefined;
   private readonly forcedSlot: 0 | 1 | undefined;
 
-  constructor(saveFilePath: string, options: Gen4ParserOptions = {}) {
-    super(saveFilePath);
+  constructor(save: Uint8Array, options: Gen4ParserOptions = {}) {
+    super(save);
     this.forcedGame = options.game;
     this.forcedSlot = options.slot;
   }
 
+  /**
+   * A fresh, independent copy of the save bytes — safe to read or mutate.
+   * Uses the `Uint8Array` constructor rather than `.slice()` because a Node
+   * `Buffer` (from `readFileSync`) overrides `slice` to return an aliasing view.
+   */
+  private cloneSave(): Uint8Array {
+    return new Uint8Array(this.save);
+  }
+
   readParty(): PartyPokemon[] {
-    const save = readFileSync(this.saveFilePath);
+    const save = this.cloneSave();
     const game = this.resolveGame(save);
     const generalBase = this.resolveGeneralBase(save, game);
     const partyBase = generalBase + game.partyOffset;
 
-    const count = clamp(save.readUInt32LE(partyBase - 4), 0, PARTY_CAPACITY);
+    const count = clamp(readU32(save, partyBase - 4), 0, PARTY_CAPACITY);
     const party: PartyPokemon[] = [];
 
     for (let i = 0; i < count; i++) {
@@ -50,7 +58,7 @@ export class Gen4Parser extends BaseParser {
       throw new Error(`Box ${boxID} is out of range (0-${BOX_COUNT - 1})`);
     }
 
-    const save = readFileSync(this.saveFilePath);
+    const save = this.cloneSave();
     const game = this.resolveGame(save);
     const partition = this.resolveStoragePartition(save, game);
     const boxBase = partition + game.storageBase + game.boxOffset + boxID * game.boxStride;
@@ -67,7 +75,7 @@ export class Gen4Parser extends BaseParser {
 
   /** First empty slot in storage order, as `[boxID, slot]`. */
   getEmptyBoxSlot(): [number, number] {
-    const save = readFileSync(this.saveFilePath);
+    const save = this.cloneSave();
     const game = this.resolveGame(save);
     const partition = this.resolveStoragePartition(save, game);
 
@@ -83,8 +91,8 @@ export class Gen4Parser extends BaseParser {
     throw new Error("Storage is full: no empty box slot available");
   }
 
-  /** Write `pokemon` into `[boxID, slot]` and save the result to `outFile`. */
-  writePokemonToBoxSlot({boxSlot, pokemon, outFile}: WritePokemonToBoxSlotArgs): void {
+  /** Write `pokemon` into `[boxID, slot]` and return the updated save bytes. */
+  writePokemonToBoxSlot({boxSlot, pokemon}: WritePokemonToBoxSlotArgs): Uint8Array {
     if (pokemon.generation !== 4) {
       throw new Error(`Gen4Parser cannot write a generation ${pokemon.generation} Pokémon`);
     }
@@ -96,29 +104,29 @@ export class Gen4Parser extends BaseParser {
       throw new Error(`Slot ${slot} is out of range (0-${BOX_CAPACITY - 1})`);
     }
 
-    const save = readFileSync(this.saveFilePath);
+    const save = this.cloneSave();
     const game = this.resolveGame(save);
     const storageBase = this.resolveStoragePartition(save, game) + game.storageBase;
     const slotOffset = storageBase + game.boxOffset + boxID * game.boxStride + slot * BOX_SLOT_SIZE;
 
-    encodeBoxSlot(pokemon).copy(save, slotOffset);
+    copyInto(save, slotOffset, encodeBoxSlot(pokemon));
     const checksum = crc16Ccitt(save, storageBase, game.storageSize - game.blockFooterSize);
-    save.writeUInt16LE(checksum, storageBase + game.storageSize - 2);
+    writeU16(save, storageBase + game.storageSize - 2, checksum);
 
-    writeFileSync(outFile, save);
+    return save;
   }
 
-  /** Evolve the Pokémon at `boxSlot` or `partySlot` and save the result to `outFile`. */
-  async evolvePokemon({ boxSlot, partySlot, speciesID, outFile }: EvolvePokemonArgs): Promise<void> {
+  /** Evolve the Pokémon at `boxSlot` or `partySlot` and return the updated save bytes. */
+  async evolvePokemon({ boxSlot, partySlot, speciesID }: EvolvePokemonArgs): Promise<Uint8Array> {
     if (boxSlot !== undefined && partySlot !== undefined) {
       throw new Error("evolvePokemon accepts either boxSlot or partySlot, not both");
     }
 
-    const save = readFileSync(this.saveFilePath);
+    const save = this.cloneSave();
     const game = this.resolveGame(save);
 
-    if (partySlot !== undefined) return this.evolveParty(save, game, partySlot, speciesID, outFile);
-    if (boxSlot !== undefined) return this.evolveBox(save, game, boxSlot, speciesID, outFile);
+    if (partySlot !== undefined) return this.evolveParty(save, game, partySlot, speciesID);
+    if (boxSlot !== undefined) return this.evolveBox(save, game, boxSlot, speciesID);
     throw new Error("evolvePokemon requires a boxSlot or partySlot");
   }
 
@@ -144,12 +152,11 @@ export class Gen4Parser extends BaseParser {
   }
 
   private async evolveBox(
-    save: Buffer,
+    save: Uint8Array,
     game: Gen4Game,
     [boxID, slot]: [number, number],
     requestedSpeciesId: number | undefined,
-    outFile: string,
-  ): Promise<void> {
+  ): Promise<Uint8Array> {
     if (!Number.isInteger(boxID) || boxID < 0 || boxID >= BOX_COUNT) {
       throw new Error(`Box ${boxID} is out of range (0-${BOX_COUNT - 1})`);
     }
@@ -163,24 +170,24 @@ export class Gen4Parser extends BaseParser {
     if (!current) throw new Error(`Box ${boxID} slot ${slot} is empty`);
 
     const speciesId = await this.resolveEvolution(current.speciesId, requestedSpeciesId);
-    encodeBoxSlot({ ...current, speciesId }).copy(save, slotOffset);
-    save.writeUInt16LE(
-      crc16Ccitt(save, storageBase, game.storageSize - game.blockFooterSize),
+    copyInto(save, slotOffset, encodeBoxSlot({ ...current, speciesId }));
+    writeU16(
+      save,
       storageBase + game.storageSize - 2,
+      crc16Ccitt(save, storageBase, game.storageSize - game.blockFooterSize),
     );
-    writeFileSync(outFile, save);
+    return save;
   }
 
   private async evolveParty(
-    save: Buffer,
+    save: Uint8Array,
     game: Gen4Game,
     partySlot: number,
     requestedSpeciesId: number | undefined,
-    outFile: string,
-  ): Promise<void> {
+  ): Promise<Uint8Array> {
     const generalBase = this.resolveGeneralBase(save, game);
     const partyBase = generalBase + game.partyOffset;
-    const count = clamp(save.readUInt32LE(partyBase - 4), 0, PARTY_CAPACITY);
+    const count = clamp(readU32(save, partyBase - 4), 0, PARTY_CAPACITY);
     if (!Number.isInteger(partySlot) || partySlot < 0 || partySlot >= count) {
       throw new Error(`Party slot ${partySlot} is empty`);
     }
@@ -197,21 +204,22 @@ export class Gen4Parser extends BaseParser {
     const stats = computeStats(species.baseStats, current.ivs, current.evs, current.level, current.natureId);
 
     const evolved: PokemonGen4 = { ...current, speciesId };
-    encodePartySlot(evolved, {
+    copyInto(save, slotOffset, encodePartySlot(evolved, {
       status: current.status,
       level: current.level,
       currentHp: stats.hp,
       stats,
-    }).copy(save, slotOffset);
-    save.writeUInt16LE(
-      crc16Ccitt(save, generalBase, game.generalSize - game.blockFooterSize),
+    }));
+    writeU16(
+      save,
       generalBase + game.generalSize - 2,
+      crc16Ccitt(save, generalBase, game.generalSize - game.blockFooterSize),
     );
-    writeFileSync(outFile, save);
+    return save;
   }
 
   /** Pick the game variant: explicit override, then footer size, then DP. */
-  private resolveGame(save: Buffer): Gen4Game {
+  private resolveGame(save: Uint8Array): Gen4Game {
     const [defaultGame] = GEN4_GAMES;
     if (!defaultGame) throw new Error("No Gen 4 game definitions configured");
 
@@ -224,7 +232,7 @@ export class Gen4Parser extends BaseParser {
         // footer itself sits at (generalSize - 0x14), so the size field is at
         // (generalSize - 0x0C). Use it to fingerprint the game.
         const sizeField = base + game.generalSize - 0x0c;
-        if (sizeField + 4 <= save.length && save.readUInt32LE(sizeField) === game.generalSize) {
+        if (sizeField + 4 <= save.length && readU32(save, sizeField) === game.generalSize) {
           return game;
         }
       }
@@ -233,13 +241,13 @@ export class Gen4Parser extends BaseParser {
   }
 
   /** Pick the live save slot via the footer save counter (higher wins). */
-  private resolveGeneralBase(save: Buffer, game: Gen4Game): number {
+  private resolveGeneralBase(save: Uint8Array, game: Gen4Game): number {
     if (this.forcedSlot !== undefined) return SLOT_BASES[this.forcedSlot];
 
     const counterAt = (base: number): number => {
       // Save counter lives at footer+0x04, i.e. (generalSize - 0x10).
       const counter = base + game.generalSize - 0x10;
-      return counter + 4 <= save.length ? save.readUInt32LE(counter) : 0;
+      return counter + 4 <= save.length ? readU32(save, counter) : 0;
     };
 
     return counterAt(SLOT_BASES[1]) > counterAt(SLOT_BASES[0]) ? SLOT_BASES[1] : SLOT_BASES[0];
@@ -249,12 +257,12 @@ export class Gen4Parser extends BaseParser {
    * Pick the live storage partition. The storage block rotates independently
    * of the general block, so it has its own footer save counter.
    */
-  private resolveStoragePartition(save: Buffer, game: Gen4Game): number {
+  private resolveStoragePartition(save: Uint8Array, game: Gen4Game): number {
     if (this.forcedSlot !== undefined) return SLOT_BASES[this.forcedSlot];
 
     const counterAt = (base: number): number => {
       const counter = base + game.storageBase + game.storageSize - 0x10;
-      return counter + 4 <= save.length ? save.readUInt32LE(counter) : 0;
+      return counter + 4 <= save.length ? readU32(save, counter) : 0;
     };
 
     return counterAt(SLOT_BASES[1]) > counterAt(SLOT_BASES[0]) ? SLOT_BASES[1] : SLOT_BASES[0];

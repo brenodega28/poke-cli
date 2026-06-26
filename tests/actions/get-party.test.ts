@@ -1,4 +1,5 @@
 import { test, expect } from "bun:test";
+import { readFileSync } from "node:fs";
 import { getParser } from "../../src/parsers/decider";
 import { captureLog } from "../utils";
 import { getParty } from "../../src/actions/get-party";
@@ -6,7 +7,7 @@ import { getParty } from "../../src/actions/get-party";
 test("It returns all JSON party for gen 4 pokemon", () => {
   const path = "./saves/platinum.sav";
   const out = captureLog();
-  const parser = getParser(path);
+  const parser = getParser(readFileSync(path));
 
   getParty(path, {});
 
@@ -16,7 +17,7 @@ test("It returns all JSON party for gen 4 pokemon", () => {
 test("It returns one JSON party for gen 4 pokemon", () => {
   const path = "./saves/platinum.sav";
   const out = captureLog();
-  const parser = getParser(path);
+  const parser = getParser(readFileSync(path));
 
   getParty(path, {index:"0"});
 

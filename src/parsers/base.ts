@@ -1,31 +1,29 @@
 import { fetchPokemonDataByID } from "../pokemon/data";
 import type { PartyPokemon, Pokemon } from "../pokemon/types";
 
-type WithOutFile = {outFile: string;}
-
 export type EvolvePokemonArgs = {
     boxSlot?: [number,number];
     partySlot?: number;
     speciesID?: number;
-} & WithOutFile
+}
 
 export type WritePokemonToBoxSlotArgs = {
     pokemon: Pokemon;
     boxSlot: [number, number];
-} & WithOutFile
+}
 
 export abstract class BaseParser{
-    saveFilePath: string;
-    
-    constructor(saveFilePath: string){
-        this.saveFilePath = saveFilePath;
+    protected save: Uint8Array;
+
+    constructor(save: Uint8Array){
+        this.save = save;
     }
 
     abstract readParty(): PartyPokemon[];
     abstract readBox(boxID: number): Pokemon[];
     abstract getEmptyBoxSlot(): [number, number];
-    abstract writePokemonToBoxSlot(args: WritePokemonToBoxSlotArgs): void;
-    abstract evolvePokemon(args: EvolvePokemonArgs): void;
+    abstract writePokemonToBoxSlot(args: WritePokemonToBoxSlotArgs): Uint8Array;
+    abstract evolvePokemon(args: EvolvePokemonArgs): Promise<Uint8Array>;
 
     async printPokemon(pokemon: Pokemon){
         const species = await fetchPokemonDataByID(pokemon.speciesId)

@@ -1,9 +1,7 @@
-import { rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
 import { Gen4Parser } from "../../src/parsers/gen4/parser";
-const parser = new Gen4Parser("./saves/heartgold.sav");
+const parser = new Gen4Parser(readFileSync("./saves/heartgold.sav"));
 
 test("It correctly gets empty box slot", () =>{
     expect(parser.getEmptyBoxSlot()).toEqual([16, 20])
@@ -333,10 +331,9 @@ test("It correctly writes pokemon to the nearest empty box", () =>{
     if (!pokemon) return;
 
     const [boxID, slot] = parser.getEmptyBoxSlot();
-    const outFile = join(tmpdir(), "poke-cli.heartgold.write.sav");
-    parser.writePokemonToBoxSlot({ pokemon, boxSlot: [boxID, slot], outFile });
+    const updated = parser.writePokemonToBoxSlot({ pokemon, boxSlot: [boxID, slot] });
 
-    const written = new Gen4Parser(outFile).readBox(boxID)[slot];
+    const written = new Gen4Parser(updated).readBox(boxID)[slot];
 
     // A boxed Pokémon drops the party-only fields, so re-attach them to compare.
     // The OT name truncates at the unmapped Gen 4 symbol "?????", which the
@@ -346,33 +343,27 @@ test("It correctly writes pokemon to the nearest empty box", () =>{
         ...pokemon,
         ot: { ...pokemon.ot, name: "" },
     })
-
-    rmSync(outFile, { force: true });
 })
 
 test("It correctly evolves a single-path pokemon", async () =>{
     // Pikachu (#25) evolves only into Raichu (#26).
-    const outFile = join(tmpdir(), "poke-cli.heartgold.evo-single.sav");
     expect(parser.readBox(0)[18]?.speciesId).toBe(25);
 
-    await parser.evolvePokemon({ boxSlot: [0, 18], outFile });
+    const updated = await parser.evolvePokemon({ boxSlot: [0, 18] });
 
-    expect(new Gen4Parser(outFile).readBox(0)[18]?.speciesId).toBe(26);
-    rmSync(outFile, { force: true });
+    expect(new Gen4Parser(updated).readBox(0)[18]?.speciesId).toBe(26);
 })
 
 test("It correctly evolves a branching pokemon to the chosen species", async () =>{
     // Eevee (#133) at box 17 slot 19 has many evolutions; pick Espeon (#196).
-    const outFile = join(tmpdir(), "poke-cli.heartgold.evo-branch.sav");
     const before = parser.readBox(17);
     expect(before.filter((m) => m.speciesId === 133).length).toBe(1);
     expect(before.some((m) => m.speciesId === 196)).toBe(false);
 
-    await parser.evolvePokemon({ boxSlot: [17, 19], speciesID: 196, outFile });
+    const updated = await parser.evolvePokemon({ boxSlot: [17, 19], speciesID: 196 });
 
-    const after = new Gen4Parser(outFile).readBox(17);
+    const after = new Gen4Parser(updated).readBox(17);
     expect(after.some((m) => m.speciesId === 133)).toBe(false);
     expect(after.filter((m) => m.speciesId === 196).length).toBe(1);
-    rmSync(outFile, { force: true });
 })
 

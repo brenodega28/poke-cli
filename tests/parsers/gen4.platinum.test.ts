@@ -1,9 +1,7 @@
-import { rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
 import { Gen4Parser } from "../../src/parsers/gen4/parser";
-const parser = new Gen4Parser("./saves/platinum.sav");
+const parser = new Gen4Parser(readFileSync("./saves/platinum.sav"));
 
 test("It correctly gets empty box slot", () =>{
     expect(parser.getEmptyBoxSlot()).toEqual([7, 28])
@@ -322,10 +320,9 @@ test("It correctly writes pokemon to the nearest empty box", () =>{
     if (!pokemon) return;
 
     const [boxID, slot] = parser.getEmptyBoxSlot();
-    const outFile = join(tmpdir(), "poke-cli.platinum.write.sav");
-    parser.writePokemonToBoxSlot({ pokemon, boxSlot: [boxID, slot], outFile });
+    const updated = parser.writePokemonToBoxSlot({ pokemon, boxSlot: [boxID, slot] });
 
-    const written = new Gen4Parser(outFile).readBox(boxID)[slot];
+    const written = new Gen4Parser(updated).readBox(boxID)[slot];
 
     // A boxed Pokémon drops the party-only fields, so re-attach them to compare.
     // The OT name truncates at the unmapped Gen 4 symbol in "Mattia?", which the
@@ -335,28 +332,22 @@ test("It correctly writes pokemon to the nearest empty box", () =>{
         ...pokemon,
         ot: { ...pokemon.ot, name: "Mattia" },
     })
-
-    rmSync(outFile, { force: true });
 })
 
 test("It correctly evolves a single-path pokemon", async () =>{
     // Turtwig (#387) evolves only into Grotle (#388).
-    const outFile = join(tmpdir(), "poke-cli.platinum.evo-single.sav");
     expect(parser.readBox(0)[0]?.speciesId).toBe(387);
 
-    await parser.evolvePokemon({ boxSlot: [0, 0], outFile });
+    const updated = await parser.evolvePokemon({ boxSlot: [0, 0] });
 
-    expect(new Gen4Parser(outFile).readBox(0)[0]?.speciesId).toBe(388);
-    rmSync(outFile, { force: true });
+    expect(new Gen4Parser(updated).readBox(0)[0]?.speciesId).toBe(388);
 })
 
 test("It correctly evolves a branching pokemon to the chosen species", async () =>{
     // Burmy (#412) can become Wormadam (#413) or Mothim (#414); pick Mothim.
-    const outFile = join(tmpdir(), "poke-cli.platinum.evo-branch.sav");
     expect(parser.readBox(1)[14]?.speciesId).toBe(412);
 
-    await parser.evolvePokemon({ boxSlot: [1, 14], speciesID: 414, outFile });
+    const updated = await parser.evolvePokemon({ boxSlot: [1, 14], speciesID: 414 });
 
-    expect(new Gen4Parser(outFile).readBox(1)[14]?.speciesId).toBe(414);
-    rmSync(outFile, { force: true });
+    expect(new Gen4Parser(updated).readBox(1)[14]?.speciesId).toBe(414);
 })

@@ -1,9 +1,7 @@
-import { rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
 import { Gen4Parser } from "../../src/parsers/gen4/parser";
-const parser = new Gen4Parser("./saves/diamond.sav");
+const parser = new Gen4Parser(readFileSync("./saves/diamond.sav"));
 
 test("It correctly gets empty box slot", () =>{
     expect(parser.getEmptyBoxSlot()).toEqual([10, 29])
@@ -330,36 +328,29 @@ test("It correctly writes pokemon to the nearest empty box", () =>{
     if (!pokemon) return;
 
     const [boxID, slot] = parser.getEmptyBoxSlot();
-    const outFile = join(tmpdir(), "poke-cli.diamond.write.sav");
-    parser.writePokemonToBoxSlot({ pokemon, boxSlot: [boxID, slot], outFile });
+    const updated = parser.writePokemonToBoxSlot({ pokemon, boxSlot: [boxID, slot] });
 
-    const written = new Gen4Parser(outFile).readBox(boxID)[slot];
+    const written = new Gen4Parser(updated).readBox(boxID)[slot];
 
     // A boxed Pokémon drops the party-only fields, so re-attach them to compare.
     const { status, level, currentHp, stats } = pokemon;
     expect({ ...written, status, level, currentHp, stats }).toEqual(pokemon);
-
-    rmSync(outFile, { force: true });
 })
 
 test("It correctly evolves a single-path pokemon", async () =>{
     // Staravia (#397) in the party evolves only into Staraptor (#398).
-    const outFile = join(tmpdir(), "poke-cli.diamond.evo-single.sav");
     expect(parser.readParty()[1]?.speciesId).toBe(397);
 
-    await parser.evolvePokemon({ partySlot: 1, outFile });
+    const updated = await parser.evolvePokemon({ partySlot: 1 });
 
-    expect(new Gen4Parser(outFile).readParty()[1]?.speciesId).toBe(398);
-    rmSync(outFile, { force: true });
+    expect(new Gen4Parser(updated).readParty()[1]?.speciesId).toBe(398);
 })
 
 test("It correctly evolves a branching pokemon to the chosen species", async () =>{
     // Slowpoke (#79) can become Slowbro (#80) or Slowking (#199); pick Slowking.
-    const outFile = join(tmpdir(), "poke-cli.diamond.evo-branch.sav");
     expect(parser.readBox(6)[11]?.speciesId).toBe(79);
 
-    await parser.evolvePokemon({ boxSlot: [6, 11], speciesID: 199, outFile });
+    const updated = await parser.evolvePokemon({ boxSlot: [6, 11], speciesID: 199 });
 
-    expect(new Gen4Parser(outFile).readBox(6)[11]?.speciesId).toBe(199);
-    rmSync(outFile, { force: true });
+    expect(new Gen4Parser(updated).readBox(6)[11]?.speciesId).toBe(199);
 })

@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from "node:fs";
 import { getParser } from "../parsers/decider";
 import type { Pokemon } from "../pokemon/types";
 
@@ -6,8 +7,8 @@ export function clonePokemon(
   toPath: string,
   options: Record<string, string>,
 ) {
-  const originParser = getParser(fromPath);
-  const destinationParser = getParser(toPath);
+  const originParser = getParser(readFileSync(fromPath));
+  const destinationParser = getParser(readFileSync(toPath));
   if (!options.party && !options.box)
     throw Error("Must provide party or box location using -p or -b");
   let pokemon;
@@ -20,9 +21,10 @@ export function clonePokemon(
     ];
   }
 
-  destinationParser.writePokemonToBoxSlot({
+  const updated = destinationParser.writePokemonToBoxSlot({
     pokemon: pokemon as Pokemon,
     boxSlot: destinationParser.getEmptyBoxSlot(),
-    outFile: options.out || toPath,
   });
+
+  writeFileSync(options.out || toPath, updated);
 }
