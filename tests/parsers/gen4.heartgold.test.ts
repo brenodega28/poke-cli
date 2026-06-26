@@ -334,7 +334,7 @@ test("It correctly writes pokemon to the nearest empty box", () =>{
 
     const [boxID, slot] = parser.getEmptyBoxSlot();
     const outFile = join(tmpdir(), "poke-cli.heartgold.write.sav");
-    parser.writePokemonToBoxSlot(pokemon, [boxID, slot], outFile);
+    parser.writePokemonToBoxSlot({ pokemon, boxSlot: [boxID, slot], outFile });
 
     const written = new Gen4Parser(outFile).readBox(boxID)[slot];
 
@@ -347,6 +347,32 @@ test("It correctly writes pokemon to the nearest empty box", () =>{
         ot: { ...pokemon.ot, name: "" },
     })
 
+    rmSync(outFile, { force: true });
+})
+
+test("It correctly evolves a single-path pokemon", async () =>{
+    // Pikachu (#25) evolves only into Raichu (#26).
+    const outFile = join(tmpdir(), "poke-cli.heartgold.evo-single.sav");
+    expect(parser.readBox(0)[18]?.speciesId).toBe(25);
+
+    await parser.evolvePokemon({ boxSlot: [0, 18], outFile });
+
+    expect(new Gen4Parser(outFile).readBox(0)[18]?.speciesId).toBe(26);
+    rmSync(outFile, { force: true });
+})
+
+test("It correctly evolves a branching pokemon to the chosen species", async () =>{
+    // Eevee (#133) at box 17 slot 19 has many evolutions; pick Espeon (#196).
+    const outFile = join(tmpdir(), "poke-cli.heartgold.evo-branch.sav");
+    const before = parser.readBox(17);
+    expect(before.filter((m) => m.speciesId === 133).length).toBe(1);
+    expect(before.some((m) => m.speciesId === 196)).toBe(false);
+
+    await parser.evolvePokemon({ boxSlot: [17, 19], speciesID: 196, outFile });
+
+    const after = new Gen4Parser(outFile).readBox(17);
+    expect(after.some((m) => m.speciesId === 133)).toBe(false);
+    expect(after.filter((m) => m.speciesId === 196).length).toBe(1);
     rmSync(outFile, { force: true });
 })
 

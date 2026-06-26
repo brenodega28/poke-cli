@@ -331,7 +331,7 @@ test("It correctly writes pokemon to the nearest empty box", () =>{
 
     const [boxID, slot] = parser.getEmptyBoxSlot();
     const outFile = join(tmpdir(), "poke-cli.diamond.write.sav");
-    parser.writePokemonToBoxSlot(pokemon, [boxID, slot], outFile);
+    parser.writePokemonToBoxSlot({ pokemon, boxSlot: [boxID, slot], outFile });
 
     const written = new Gen4Parser(outFile).readBox(boxID)[slot];
 
@@ -339,5 +339,27 @@ test("It correctly writes pokemon to the nearest empty box", () =>{
     const { status, level, currentHp, stats } = pokemon;
     expect({ ...written, status, level, currentHp, stats }).toEqual(pokemon);
 
+    rmSync(outFile, { force: true });
+})
+
+test("It correctly evolves a single-path pokemon", async () =>{
+    // Staravia (#397) in the party evolves only into Staraptor (#398).
+    const outFile = join(tmpdir(), "poke-cli.diamond.evo-single.sav");
+    expect(parser.readParty()[1]?.speciesId).toBe(397);
+
+    await parser.evolvePokemon({ partySlot: 1, outFile });
+
+    expect(new Gen4Parser(outFile).readParty()[1]?.speciesId).toBe(398);
+    rmSync(outFile, { force: true });
+})
+
+test("It correctly evolves a branching pokemon to the chosen species", async () =>{
+    // Slowpoke (#79) can become Slowbro (#80) or Slowking (#199); pick Slowking.
+    const outFile = join(tmpdir(), "poke-cli.diamond.evo-branch.sav");
+    expect(parser.readBox(6)[11]?.speciesId).toBe(79);
+
+    await parser.evolvePokemon({ boxSlot: [6, 11], speciesID: 199, outFile });
+
+    expect(new Gen4Parser(outFile).readBox(6)[11]?.speciesId).toBe(199);
     rmSync(outFile, { force: true });
 })

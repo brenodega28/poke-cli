@@ -7,8 +7,8 @@ export interface Gen4Game {
   /** Offset of the storage block within a partition (not always contiguous). */
   readonly storageBase: number;
   readonly storageSize: number;
-  /** Trailing footer bytes excluded from the block CRC (HGSS uses 0x10, others 0x14). */
-  readonly storageFooterSize: number;
+  /** Trailing footer bytes excluded from a block CRC (HGSS uses 0x10, others 0x14). */
+  readonly blockFooterSize: number;
   /** Offset of box slot 0 within the storage block. */
   readonly boxOffset: number;
   /** Bytes between consecutive boxes (HGSS pads each box past its 30 slots). */

@@ -8,6 +8,7 @@ import type {
   MoveSlot,
   PartyPokemon,
   PokemonGen4,
+  Stats,
   StatusCondition,
 } from "../../pokemon/types";
 import {
@@ -345,6 +346,43 @@ export function encodeBoxSlot(pokemon: PokemonGen4): Buffer {
     ENCRYPTED_BLOCK_OFFSET,
   );
   return stored;
+}
+
+/** Encode a Pokémon plus its party battle stats into a 0xEC-byte party slot. */
+export function encodePartySlot(
+  pokemon: PokemonGen4,
+  battle: { status: StatusCondition; level: number; currentHp: number; stats: Stats },
+): Buffer {
+  const slot = Buffer.alloc(SLOT_SIZE);
+  encodeBoxSlot(pokemon).copy(slot, 0x00);
+
+  const block = Buffer.alloc(BATTLE_BLOCK_SIZE);
+  block.writeUInt8(encodeStatus(battle.status), 0x00);
+  block.writeUInt8(battle.level, 0x04);
+  block.writeUInt16LE(battle.currentHp, 0x06);
+  block.writeUInt16LE(battle.stats.hp, 0x08);
+  block.writeUInt16LE(battle.stats.attack, 0x0a);
+  block.writeUInt16LE(battle.stats.defense, 0x0c);
+  block.writeUInt16LE(battle.stats.speed, 0x0e);
+  block.writeUInt16LE(battle.stats.specialAttack, 0x10);
+  block.writeUInt16LE(battle.stats.specialDefense, 0x12);
+
+  xorCryptBlock(block, 0x00, BATTLE_BLOCK_SIZE, pokemon.personalityValue >>> 0).copy(
+    slot,
+    BATTLE_BLOCK_OFFSET,
+  );
+  return slot;
+}
+
+function encodeStatus(status: StatusCondition): number {
+  return (
+    (status.sleepTurns & 0x07) |
+    (status.poison ? 0x08 : 0) |
+    (status.burn ? 0x10 : 0) |
+    (status.freeze ? 0x20 : 0) |
+    (status.paralysis ? 0x40 : 0) |
+    (status.badlyPoisoned ? 0x80 : 0)
+  );
 }
 
 /** CRC-16/CCITT (poly 0x1021, init 0xFFFF) used by the Gen 4 block footers. */

@@ -1,19 +1,21 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
-import { BaseParser } from "../base";
-import type { PartyPokemon, Pokemon } from "../../pokemon/types";
-import { clamp } from "../../utils/math";
+import { BaseParser, type EvolvePokemonArgs, type WritePokemonToBoxSlotArgs } from "../base";
+import { fetchPokemonDataByID } from "../../pokemon/data";
+import type { PartyPokemon, Pokemon, PokemonGen4 } from "../../pokemon/types";
+import { clamp, computeStats } from "../../utils/math";
 import type { Gen4Game, Gen4ParserOptions } from "./types";
 import {
   BOX_CAPACITY,
   BOX_COUNT,
   BOX_SLOT_SIZE,
   GEN4_GAMES,
+  GEN4_MAX_SPECIES,
   PARTY_CAPACITY,
   SLOT_BASES,
   SLOT_SIZE,
 } from "./constants";
-import { crc16Ccitt, decodeBoxSlot, decodePartySlot, encodeBoxSlot } from "./utils";
+import { crc16Ccitt, decodeBoxSlot, decodePartySlot, encodeBoxSlot, encodePartySlot } from "./utils";
 
 export class Gen4Parser extends BaseParser {
   private readonly forcedGame: Gen4Game["name"] | undefined;
@@ -82,7 +84,7 @@ export class Gen4Parser extends BaseParser {
   }
 
   /** Write `pokemon` into `[boxID, slot]` and save the result to `outFile`. */
-  writePokemonToBoxSlot(pokemon: Pokemon, boxSlot: [number, number], outFile: string): void {
+  writePokemonToBoxSlot({boxSlot, pokemon, outFile}: WritePokemonToBoxSlotArgs): void {
     if (pokemon.generation !== 4) {
       throw new Error(`Gen4Parser cannot write a generation ${pokemon.generation} Pokémon`);
     }
@@ -100,9 +102,111 @@ export class Gen4Parser extends BaseParser {
     const slotOffset = storageBase + game.boxOffset + boxID * game.boxStride + slot * BOX_SLOT_SIZE;
 
     encodeBoxSlot(pokemon).copy(save, slotOffset);
-    const checksum = crc16Ccitt(save, storageBase, game.storageSize - game.storageFooterSize);
+    const checksum = crc16Ccitt(save, storageBase, game.storageSize - game.blockFooterSize);
     save.writeUInt16LE(checksum, storageBase + game.storageSize - 2);
 
+    writeFileSync(outFile, save);
+  }
+
+  /** Evolve the Pokémon at `boxSlot` or `partySlot` and save the result to `outFile`. */
+  async evolvePokemon({ boxSlot, partySlot, speciesID, outFile }: EvolvePokemonArgs): Promise<void> {
+    if (boxSlot !== undefined && partySlot !== undefined) {
+      throw new Error("evolvePokemon accepts either boxSlot or partySlot, not both");
+    }
+
+    const save = readFileSync(this.saveFilePath);
+    const game = this.resolveGame(save);
+
+    if (partySlot !== undefined) return this.evolveParty(save, game, partySlot, speciesID, outFile);
+    if (boxSlot !== undefined) return this.evolveBox(save, game, boxSlot, speciesID, outFile);
+    throw new Error("evolvePokemon requires a boxSlot or partySlot");
+  }
+
+  /**
+   * National Dex id to evolve into. With `requested`, validates it is one of the
+   * species' Gen 4 evolutions; otherwise picks the first one.
+   */
+  private async resolveEvolution(speciesId: number, requested: number | undefined): Promise<number> {
+    const species = await fetchPokemonDataByID(speciesId);
+    const options = species.evolvesTo.filter((e) => e.toSpeciesId <= GEN4_MAX_SPECIES);
+
+    if (requested !== undefined) {
+      const match = options.find((e) => e.toSpeciesId === requested);
+      if (!match) {
+        throw new Error(`#${requested} is not a Gen 4 evolution of ${species.name} (#${speciesId})`);
+      }
+      return match.toSpeciesId;
+    }
+
+    const [evolution] = options;
+    if (!evolution) throw new Error(`${species.name} (#${speciesId}) has no Gen 4 evolution`);
+    return evolution.toSpeciesId;
+  }
+
+  private async evolveBox(
+    save: Buffer,
+    game: Gen4Game,
+    [boxID, slot]: [number, number],
+    requestedSpeciesId: number | undefined,
+    outFile: string,
+  ): Promise<void> {
+    if (!Number.isInteger(boxID) || boxID < 0 || boxID >= BOX_COUNT) {
+      throw new Error(`Box ${boxID} is out of range (0-${BOX_COUNT - 1})`);
+    }
+    if (!Number.isInteger(slot) || slot < 0 || slot >= BOX_CAPACITY) {
+      throw new Error(`Slot ${slot} is out of range (0-${BOX_CAPACITY - 1})`);
+    }
+
+    const storageBase = this.resolveStoragePartition(save, game) + game.storageBase;
+    const slotOffset = storageBase + game.boxOffset + boxID * game.boxStride + slot * BOX_SLOT_SIZE;
+    const current = decodeBoxSlot(save.subarray(slotOffset, slotOffset + BOX_SLOT_SIZE));
+    if (!current) throw new Error(`Box ${boxID} slot ${slot} is empty`);
+
+    const speciesId = await this.resolveEvolution(current.speciesId, requestedSpeciesId);
+    encodeBoxSlot({ ...current, speciesId }).copy(save, slotOffset);
+    save.writeUInt16LE(
+      crc16Ccitt(save, storageBase, game.storageSize - game.blockFooterSize),
+      storageBase + game.storageSize - 2,
+    );
+    writeFileSync(outFile, save);
+  }
+
+  private async evolveParty(
+    save: Buffer,
+    game: Gen4Game,
+    partySlot: number,
+    requestedSpeciesId: number | undefined,
+    outFile: string,
+  ): Promise<void> {
+    const generalBase = this.resolveGeneralBase(save, game);
+    const partyBase = generalBase + game.partyOffset;
+    const count = clamp(save.readUInt32LE(partyBase - 4), 0, PARTY_CAPACITY);
+    if (!Number.isInteger(partySlot) || partySlot < 0 || partySlot >= count) {
+      throw new Error(`Party slot ${partySlot} is empty`);
+    }
+
+    const slotOffset = partyBase + partySlot * SLOT_SIZE;
+    const current = decodePartySlot(save.subarray(slotOffset, slotOffset + SLOT_SIZE));
+    if (!current) throw new Error(`Party slot ${partySlot} is empty`);
+    if (current.generation !== 4) {
+      throw new Error(`Gen4Parser cannot evolve a generation ${current.generation} Pokémon`);
+    }
+
+    const speciesId = await this.resolveEvolution(current.speciesId, requestedSpeciesId);
+    const species = await fetchPokemonDataByID(speciesId);
+    const stats = computeStats(species.baseStats, current.ivs, current.evs, current.level, current.natureId);
+
+    const evolved: PokemonGen4 = { ...current, speciesId };
+    encodePartySlot(evolved, {
+      status: current.status,
+      level: current.level,
+      currentHp: stats.hp,
+      stats,
+    }).copy(save, slotOffset);
+    save.writeUInt16LE(
+      crc16Ccitt(save, generalBase, game.generalSize - game.blockFooterSize),
+      generalBase + game.generalSize - 2,
+    );
     writeFileSync(outFile, save);
   }
 

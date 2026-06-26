@@ -323,7 +323,7 @@ test("It correctly writes pokemon to the nearest empty box", () =>{
 
     const [boxID, slot] = parser.getEmptyBoxSlot();
     const outFile = join(tmpdir(), "poke-cli.platinum.write.sav");
-    parser.writePokemonToBoxSlot(pokemon, [boxID, slot], outFile);
+    parser.writePokemonToBoxSlot({ pokemon, boxSlot: [boxID, slot], outFile });
 
     const written = new Gen4Parser(outFile).readBox(boxID)[slot];
 
@@ -336,5 +336,27 @@ test("It correctly writes pokemon to the nearest empty box", () =>{
         ot: { ...pokemon.ot, name: "Mattia" },
     })
 
+    rmSync(outFile, { force: true });
+})
+
+test("It correctly evolves a single-path pokemon", async () =>{
+    // Turtwig (#387) evolves only into Grotle (#388).
+    const outFile = join(tmpdir(), "poke-cli.platinum.evo-single.sav");
+    expect(parser.readBox(0)[0]?.speciesId).toBe(387);
+
+    await parser.evolvePokemon({ boxSlot: [0, 0], outFile });
+
+    expect(new Gen4Parser(outFile).readBox(0)[0]?.speciesId).toBe(388);
+    rmSync(outFile, { force: true });
+})
+
+test("It correctly evolves a branching pokemon to the chosen species", async () =>{
+    // Burmy (#412) can become Wormadam (#413) or Mothim (#414); pick Mothim.
+    const outFile = join(tmpdir(), "poke-cli.platinum.evo-branch.sav");
+    expect(parser.readBox(1)[14]?.speciesId).toBe(412);
+
+    await parser.evolvePokemon({ boxSlot: [1, 14], speciesID: 414, outFile });
+
+    expect(new Gen4Parser(outFile).readBox(1)[14]?.speciesId).toBe(414);
     rmSync(outFile, { force: true });
 })
