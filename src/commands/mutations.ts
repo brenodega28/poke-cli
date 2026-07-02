@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from "node:fs";
 import { Command } from "commander";
 import { evolvePokemon } from "../actions/evolve-pokemon";
 import { clonePokemon } from "../actions/clone-pokemon";
@@ -16,7 +17,10 @@ export function loadMutationCommands(program: Command) {
       "-b --box <VALUE>",
       "Gets Pokémon from box in format [box, position]",
     )
-    .action(clonePokemon);
+    .action((fromPath: string, toPath: string, options: Record<string, string>) => {
+      const result = clonePokemon(readFileSync(fromPath), readFileSync(toPath), options);
+      writeFileSync(options.out || toPath, result);
+    });
 
   program
     .command("evolve")
@@ -32,5 +36,8 @@ export function loadMutationCommands(program: Command) {
       "-b --box <VALUE>",
       "Gets Pokémon from box in format [box, position]",
     )
-    .action(evolvePokemon);
+    .action(async (fromPath: string, options: Record<string, string>) => {
+      const result = await evolvePokemon(readFileSync(fromPath), options);
+      writeFileSync(options.out || fromPath, result);
+    });
 }

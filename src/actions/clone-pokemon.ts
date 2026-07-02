@@ -1,14 +1,17 @@
-import { readFileSync, writeFileSync } from "node:fs";
 import { getParser } from "../parsers/decider";
 import type { Pokemon } from "../pokemon/types";
 
+/**
+ * Copy a Pokémon out of `origin` into the nearest empty box slot of
+ * `destination`. Returns the updated `destination` save bytes.
+ */
 export function clonePokemon(
-  fromPath: string,
-  toPath: string,
+  origin: Uint8Array,
+  destination: Uint8Array,
   options: Record<string, string>,
-) {
-  const originParser = getParser(readFileSync(fromPath));
-  const destinationParser = getParser(readFileSync(toPath));
+): Uint8Array {
+  const originParser = getParser(origin);
+  const destinationParser = getParser(destination);
   if (!options.party && !options.box)
     throw Error("Must provide party or box location using -p or -b");
   let pokemon;
@@ -21,10 +24,8 @@ export function clonePokemon(
     ];
   }
 
-  const updated = destinationParser.writePokemonToBoxSlot({
+  return destinationParser.writePokemonToBoxSlot({
     pokemon: pokemon as Pokemon,
     boxSlot: destinationParser.getEmptyBoxSlot(),
   });
-
-  writeFileSync(options.out || toPath, updated);
 }

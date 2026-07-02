@@ -1,34 +1,30 @@
-import { readFileSync, writeFileSync } from "node:fs";
 import type { EvolvePokemonArgs } from "../parsers/base";
 import { getParser } from "../parsers/decider";
 
+/**
+ * Evolve the selected party or box Pokémon in `save`. Returns the updated
+ * save bytes.
+ */
 export async function evolvePokemon(
-  fromPath: string,
+  save: Uint8Array,
   options: Record<string, string>,
-) {
-  const parser = getParser(readFileSync(fromPath));
-  const outFile = options.out ?? fromPath;
+): Promise<Uint8Array> {
+  const parser = getParser(save);
 
   if (!options.party && !options.box)
     throw Error("Must provide party or box location using -p or -b");
 
-  let updated: Uint8Array;
   if (options.party)
-    updated = await parser.evolvePokemon({
-        partySlot: parseInt(options.party),
-    });
-  else {
-    const boxPos: string[] = options.box!.split(",")
-    const args: EvolvePokemonArgs = {
-        boxSlot: [parseInt(boxPos[0] ?? "0"), parseInt(boxPos[1] ?? "0")],
-    }
+    return parser.evolvePokemon({ partySlot: parseInt(options.party) });
 
-    if(options.specieid){
-        args.speciesID = parseInt(options.specieid)
-    }
+  const boxPos: string[] = options.box!.split(",");
+  const args: EvolvePokemonArgs = {
+    boxSlot: [parseInt(boxPos[0] ?? "0"), parseInt(boxPos[1] ?? "0")],
+  };
 
-    updated = await parser.evolvePokemon(args);
+  if (options.specieid) {
+    args.speciesID = parseInt(options.specieid);
   }
 
-  writeFileSync(outFile, updated);
+  return parser.evolvePokemon(args);
 }

@@ -1,19 +1,13 @@
-import {test, expect} from "bun:test"
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { readFileSync, rmSync } from "node:fs";
+import { test, expect } from "bun:test"
+import { readFileSync } from "node:fs";
 import { clonePokemon } from "../../src/actions/clone-pokemon";
 import { getParser } from "../../src/parsers/decider";
 
 test("It clones gen 4 pokemon", () =>{
-    const path = "./saves/platinum.sav"
-    const outFile = join(tmpdir(), "poke-cli.platinum.clone.sav");
-    const originParser = getParser(readFileSync(path));
-    const emptyBoxSlot = originParser.getEmptyBoxSlot()
+    const bytes = readFileSync("./saves/platinum.sav")
+    const emptyBoxSlot = getParser(bytes).getEmptyBoxSlot()
 
-    clonePokemon(path, path, {party:"0", out: outFile})
-    const destinationParser = getParser(readFileSync(outFile))
+    const result = clonePokemon(bytes, bytes, { party: "0" })
 
-    expect(destinationParser.getEmptyBoxSlot()[1]).toBe(emptyBoxSlot[1] + 1)
-    rmSync(outFile, { force: true });
+    expect(getParser(result).getEmptyBoxSlot()[1]).toBe(emptyBoxSlot[1] + 1)
 })
