@@ -37,3 +37,18 @@ export function computeStats(
     specialDefense: withNature("specialDefense", 4),
   };
 }
+
+/** Hidden Power type (0–15) and power (30–70), derived from the IV low bits. */
+export function computeHiddenPower(ivs: IndividualValues): { typeId: number; power: number } {
+  const order = [ivs.hp, ivs.attack, ivs.defense, ivs.speed, ivs.specialAttack, ivs.specialDefense];
+  let typeSum = 0;
+  let powerSum = 0;
+  order.forEach((iv, i) => {
+    typeSum += (iv & 1) << i;
+    powerSum += ((iv >> 1) & 1) << i;
+  });
+  return {
+    typeId: Math.floor((typeSum * 15) / 63),
+    power: 30 + Math.floor((powerSum * 40) / 63),
+  };
+}

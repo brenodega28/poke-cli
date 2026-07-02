@@ -19,26 +19,9 @@ import {
   ENCRYPTED_BLOCK_SIZE,
   SLOT_SIZE,
 } from "./constants";
-import { copyInto, readU8, readU16, readU32, writeU8, writeU16, writeU32 } from "./bytes";
-
-/** Gen 3/4 LCRNG step used for the XOR keystream. */
-function lcrngNext(seed: number): number {
-  return (Math.imul(seed, 0x41c64e6d) + 0x6073) >>> 0;
-}
-
-/**
- * Apply the u16 XOR keystream over `length` bytes at `start` into a fresh
- * buffer. The transform is symmetric, so it both encrypts and decrypts.
- */
-function xorCryptBlock(src: Uint8Array, start: number, length: number, seed: number): Uint8Array {
-  const out = src.slice(start, start + length);
-  let state = seed >>> 0;
-  for (let i = 0; i < length; i += 2) {
-    state = lcrngNext(state);
-    writeU16(out, i, (readU16(out, i) ^ (state >>> 16)) & 0xffff);
-  }
-  return out;
-}
+import { copyInto, readU8, readU16, readU32, writeU8, writeU16, writeU32 } from "../../utils/bytes";
+import { xorCryptBlock } from "../../utils/crypto";
+import { computeHiddenPower } from "../../utils/math";
 
 /**
  * Decrypt and un-shuffle the 0x88-byte boxed structure shared by party and box
@@ -217,21 +200,6 @@ function isShiny(pid: number, tid: number, sid: number): boolean {
   return (tid ^ sid ^ high ^ low) < 8;
 }
 
-/** Hidden Power type (0–15) and power (30–70), derived from the IV low bits. */
-function computeHiddenPower(ivs: IndividualValues): { typeId: number; power: number } {
-  const order = [ivs.hp, ivs.attack, ivs.defense, ivs.speed, ivs.specialAttack, ivs.specialDefense];
-  let typeSum = 0;
-  let powerSum = 0;
-  order.forEach((iv, i) => {
-    typeSum += (iv & 1) << i;
-    powerSum += ((iv >> 1) & 1) << i;
-  });
-  return {
-    typeId: Math.floor((typeSum * 15) / 63),
-    power: 30 + Math.floor((powerSum * 40) / 63),
-  };
-}
-
 function decodeMarkings(byte: number): Markings {
   return {
     circle: (byte & 0x01) !== 0,
@@ -386,18 +354,6 @@ function encodeStatus(status: StatusCondition): number {
     (status.paralysis ? 0x40 : 0) |
     (status.badlyPoisoned ? 0x80 : 0)
   );
-}
-
-/** CRC-16/CCITT (poly 0x1021, init 0xFFFF) used by the Gen 4 block footers. */
-export function crc16Ccitt(buf: Uint8Array, start: number, length: number): number {
-  let crc = 0xffff;
-  for (let i = start; i < start + length; i++) {
-    crc = (crc ^ (readU8(buf, i) << 8)) & 0xffff;
-    for (let bit = 0; bit < 8; bit++) {
-      crc = (crc & 0x8000 ? (crc << 1) ^ 0x1021 : crc << 1) & 0xffff;
-    }
-  }
-  return crc;
 }
 
 function writeSixStats(buf: Uint8Array, offset: number, stats: EffortValues): void {

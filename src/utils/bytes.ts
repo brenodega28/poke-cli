@@ -1,6 +1,6 @@
 /**
- * Little-endian byte access over plain `Uint8Array`, so the Gen 4 codec stays
- * free of Node's `Buffer` and runs unchanged in the browser.
+ * Little-endian byte access over plain `Uint8Array`, so save codecs stay free of
+ * Node's `Buffer` and run unchanged in the browser.
  */
 
 function view(buf: Uint8Array): DataView {

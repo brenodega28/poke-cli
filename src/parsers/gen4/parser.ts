@@ -13,8 +13,9 @@ import {
   SLOT_BASES,
   SLOT_SIZE,
 } from "./constants";
-import { crc16Ccitt, decodeBoxSlot, decodePartySlot, encodeBoxSlot, encodePartySlot } from "./utils";
-import { copyInto, readU32, writeU16 } from "./bytes";
+import { decodeBoxSlot, decodePartySlot, encodeBoxSlot, encodePartySlot } from "./utils";
+import { copyInto, readU32, writeU16 } from "../../utils/bytes";
+import { crc16Ccitt } from "../../utils/crypto";
 
 export class Gen4Parser extends BaseParser {
   private readonly forcedGame: Gen4Game["name"] | undefined;
